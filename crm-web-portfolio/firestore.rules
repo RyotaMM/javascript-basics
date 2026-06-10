@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    // ロール/無効は可能ならカスタムクレームから読む(users ドキュメントの取得を省きコスト/遅延を削減)。
+    // クレーム未設定(Functions未デプロイ等)の場合は users ドキュメントにフォールバック。
+    function effectiveRole() {
+      return ('role' in request.auth.token) ? request.auth.token.role : userDoc().role;
+    }
+    function effectiveDisabled() {
+      return ('disabled' in request.auth.token)
+        ? request.auth.token.disabled
+        : (userDoc().disabled == true);
+    }
+    function isAdmin() {
+      return isSignedIn() && effectiveRole() == 'admin' && effectiveDisabled() == false;
+    }
+    function isActiveUser() {
+      return isSignedIn() && effectiveDisabled() == false;
+    }
+
+    // ユーザー: 本人のみ読み取り、書き込みは admin のみ (アカウント発行は Functions/Admin SDK)
+    // 例外: 本人は自分のセッション項目のみ更新可 (同時多重ログイン制御)
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['activeSessionId', 'sessionUpdatedAt']);
+    }
+
+    // マスタ: 認証ユーザーは読み取り、書き込みは admin
+    // (CSVインポートでのエリア/ステータス自動作成は admin が実行)
+    match /areas/{areaId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+    match /statuses/{statusId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // 店舗: 認証ユーザーは読み取り。
+    // staff は訪問関連フィールドのみ更新可。admin は全操作可。
+    match /stores/{storeId} {
+      allow read: if isActiveUser();
+      // 現場での新規登録(ピン追加)のため、有効ユーザーは作成可。削除は admin のみ。
+      allow create: if isActiveUser();
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isActiveUser() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['statusId', 'lastVisitMemo', 'lastVisitUserId', 'lastVisitAt', 'updatedAt'])
+      );
+    }
+
+    // 訪問履歴: 認証ユーザーは読み取り・作成。更新/削除は不可 (追記専用)。
+    match /visitHistories/{historyId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

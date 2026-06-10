@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "visitHistories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "visitedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "visitHistories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "visitedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "areaId", "order": "ASCENDING" },
+        { "fieldPath": "statusId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
